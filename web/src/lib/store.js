@@ -1,9 +1,29 @@
 const PREFS_KEY = 'gemini-clone.prefs.v1';
 
 export function uid() {
-  // Storage paths and primary keys both use this, so prefer real UUIDs.
-  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  // Storage paths and primary keys both use this, and chats.id / messages.id are
+  // `uuid` columns, so a non-UUID here is not a cosmetic difference — Postgres
+  // rejects the insert outright. randomUUID is secure-context-only, so it is
+  // absent over plain HTTP on a bare IP; getRandomValues carries no such
+  // restriction and builds the same thing by hand.
+  const crypto = globalThis.crypto;
+  if (crypto?.randomUUID) return crypto.randomUUID();
+
+  const bytes = new Uint8Array(16);
+  if (crypto?.getRandomValues) crypto.getRandomValues(bytes);
+  else for (let i = 0; i < 16; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
+
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join('-');
 }
 
 /* ------------------------------------------------------------------ prefs */
